@@ -4,7 +4,13 @@ provider "aws" {
 
 resource "aws_ecr_repository" "flask_repo" {
   name = var.ecr_repo_name
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [name]
+  }
 }
+
 
 resource "aws_ecs_cluster" "cluster" {
   name = var.ecs_cluster_name
@@ -23,7 +29,14 @@ resource "aws_iam_role" "ecs_task_execution" {
       Action = "sts:AssumeRole"
     }]
   })
+
+  lifecycle {
+    create_before_destroy = true
+    prevent_destroy       = true
+    ignore_changes        = [name]
+  }
 }
+
 
 
 
