@@ -23,6 +23,15 @@ jobs:
     - name: Terraform Init
       run: terraform init
 
+    - name: Import existing ECR and IAM role (if needed)
+      run: |
+        terraform state list | grep aws_ecr_repository.flask_repo || terraform import aws_ecr_repository.flask_repo flask-ecr
+        terraform state list | grep aws_iam_role.ecs_task_execution || terraform import aws_iam_role.ecs_task_execution ecsTaskExecutionRole
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_REGION: ${{ secrets.AWS_REGION }}
+
     - name: Terraform Apply
       run: terraform apply -auto-approve
       env:
