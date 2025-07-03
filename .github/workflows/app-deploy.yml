@@ -1,9 +1,10 @@
 name: App Deployment
 
 on:
-  push:
-    branches: [main]
-
+  workflow_run:
+    workflows: ["Infra Provisioning"]
+    types:
+      - completed
 jobs:
   deploy:
     runs-on: ubuntu-latest
