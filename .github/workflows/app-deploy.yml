@@ -1,0 +1,78 @@
+name: App Deployment
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Get ECR repo URI
+      id: get-ecr
+      run: |
+        REPO_URI=$(aws ecr describe-repositories --repository-names flask-ecr --query "repositories[0].repositoryUri" --output text)
+        echo "REPO_URI=$REPO_URI" >> $GITHUB_ENV
+
+    - name: Build and push Docker image
+      run: |
+        docker build -t $REPO_URI:latest .
+        docker push $REPO_URI:latest
+
+    - name: Create/Update ECS task definition and service
+      env:
+        SUBNET_ID: subnet-XXXXXXXX
+        SG_ID: sg-XXXXXXXX
+      run: |
+        TASK_ROLE=$(aws iam get-role --role-name ecsTaskExecutionRole --query "Role.Arn" --output text)
+
+        cat <<EOF > task-def.json
+        {
+          "family": "flask-task",
+          "networkMode": "awsvpc",
+          "requiresCompatibilities": ["FARGATE"],
+          "cpu": "256",
+          "memory": "512",
+          "executionRoleArn": "$TASK_ROLE",
+          "containerDefinitions": [
+            {
+              "name": "flask-container",
+              "image": "$REPO_URI:latest",
+              "essential": true,
+              "portMappings": [
+                {
+                  "containerPort": 5000,
+                  "protocol": "tcp"
+                }
+              ]
+            }
+          ]
+        }
+EOF
+
+        aws ecs register-task-definition --cli-input-json file://task-def.json || true
+
+        # create cluster if not exists
+        aws ecs describe-clusters --clusters flask-cluster --query "clusters[0].status" --output text || aws ecs create-cluster --cluster-name flask-cluster
+
+        # create or update service
+        if aws ecs describe-services --cluster flask-cluster --services flask-service --query "services[0].status" --output text; then
+          aws ecs update-service --cluster flask-cluster --service flask-service --task-definition flask-task --force-new-deployment
+        else
+          aws ecs create-service             --cluster flask-cluster             --service-name flask-service             --task-definition flask-task             --desired-count 1             --launch-type FARGATE             --network-configuration "awsvpcConfiguration={subnets=[$SUBNET_ID],securityGroups=[$SG_ID],assignPublicIp=ENABLED}"
+        fi
