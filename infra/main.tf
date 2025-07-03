@@ -26,11 +26,11 @@ resource "aws_iam_role" "ecs_task_execution" {
 }
 
 
-lifecycle {
+"""lifecycle {
     create_before_destroy = true
     prevent_destroy       = true
     ignore_changes        = [name]
-}
+}"""
 
 
 
